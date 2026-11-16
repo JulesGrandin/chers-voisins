@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+  <title>Chers voisins</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="is-intro">
+  <div id="load-overlay" role="status" aria-live="polite" aria-busy="true" aria-label="Chargement">
+    <div class="load-card">
+      <p class="load-text" id="load-text">Ça carto-charge…</p>
+      <div class="load-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div id="load-bar-fill" class="load-bar-fill"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="intro-modal" class="intro-modal" role="dialog" aria-modal="true" aria-labelledby="intro-title">
+    <div class="intro-card">
+      <h1 id="intro-title">Chers voisins</h1>
+      <p class="lead">Dessinez la frontière manquante.</p>
+      <p class="field-label">Territoires</p>
+      <div class="region-switch" role="group" aria-label="Territoires">
+        <button type="button" data-mode="world" aria-pressed="true">Monde</button>
+        <button type="button" data-mode="africa" aria-pressed="false">Afrique</button>
+        <button type="button" data-mode="europe" aria-pressed="false">Europe</button>
+        <button type="button" data-mode="us" aria-pressed="false">États-Unis</button>
+      </div>
+      <p class="field-label">Rythme</p>
+      <div class="rhythm-switch" role="group" aria-label="Rythme">
+        <button type="button" data-pace="30" aria-pressed="true">À la cool</button>
+        <button type="button" data-pace="20" aria-pressed="false">Stressant</button>
+        <button type="button" data-pace="10" aria-pressed="false">Hyper stressant</button>
+      </div>
+      <p class="field-label">Manches</p>
+      <div class="mode-switch" role="group" aria-label="Nombre de manches">
+        <button type="button" data-rounds="5" aria-pressed="true">5 manches</button>
+        <button type="button" data-rounds="10" aria-pressed="false">10 manches</button>
+      </div>
+      <button type="button" id="btn-start" class="btn-primary">Je me lance</button>
+    </div>
+  </div>
+
+  <header id="chrome" hidden>
+    <div id="screen-game">
+      <p class="round-meta" id="round-kicker">Manche 1 / 5</p>
+      <p class="target-line" id="target-label">—</p>
+      <div id="draw-actions" class="draw-actions" hidden>
+        <button type="button" id="btn-redraw" class="btn-secondary">Redessiner</button>
+        <button type="button" id="btn-validate" class="btn-primary">Valider</button>
+      </div>
+      <div id="result" hidden>
+        <div class="round-score-banner">
+          <p class="round-score-banner-score"><span id="result-score">—</span><span class="score-denom">/100</span></p>
+        </div>
+        <dl class="result-stats">
+          <div>
+            <dt>Longueur de la vraie frontière</dt>
+            <dd id="stat-real">—</dd>
+          </div>
+          <div>
+            <dt>Longueur de votre frontière</dt>
+            <dd id="stat-user">—</dd>
+          </div>
+          <div>
+            <dt>Écart moyen</dt>
+            <dd id="stat-error">—</dd>
+          </div>
+        </dl>
+        <button type="button" id="btn-next" class="btn-primary btn-block">Manche suivante</button>
+      </div>
+    </div>
+    <div class="view-toggle">
+      <p class="view-toggle-kicker">Zoomer sur</p>
+      <div class="view-toggle-switch" role="group" aria-label="Zoomer sur">
+        <button type="button" data-frame="pair" aria-pressed="true">Pays</button>
+        <button type="button" data-frame="border" aria-pressed="false">Frontière</button>
+      </div>
+    </div>
+  </header>
+
+  <aside id="history-wrap" class="score-history-wrap" hidden aria-label="Votre partie">
+    <p class="score-history-heading">Votre partie</p>
+    <ul id="history" class="score-history"></ul>
+  </aside>
+
+  <div id="finish-modal" class="intro-modal" hidden role="dialog" aria-modal="true" aria-labelledby="finish-title">
+    <div class="intro-card finish-card">
+      <h1 id="finish-title">Partie terminée</h1>
+      <p class="final-score-kicker">Votre moyenne</p>
+      <p class="final-score" id="final-score">—</p>
+      <ul class="finish-recap" id="finish-recap" aria-label="Bilan des manches"></ul>
+      <button type="button" id="btn-replay" class="btn-primary">Rejouer</button>
+    </div>
+  </div>
+
+  <div id="timer-block" class="timer-block" hidden aria-label="Temps restant">
+    <div class="timer-bar" id="timer-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+      <div id="timer-fill" class="timer-fill">
+        <span class="timer-value" id="timer-value">30 s</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="map-shell">
+    <div id="map"></div>
+  </div>
+
+  <button type="button" id="btn-score-info" class="score-info" aria-label="Comment les scores sont calculés" aria-expanded="false" aria-controls="score-pop">
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.25"></circle>
+      <path d="M8 7.15v4.15" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"></path>
+      <circle cx="8" cy="4.55" r="0.75" fill="currentColor"></circle>
+    </svg>
+  </button>
+  <div id="score-pop" class="score-pop" hidden role="dialog" aria-labelledby="score-pop-title">
+    <p class="score-pop-title" id="score-pop-title">Les scores</p>
+    <p class="score-pop-intro">La note part de 100. Elle baisse si le trait s'éloigne de la vraie frontière, et si sa longueur n'est pas la bonne.</p>
+    <p class="score-pop-note">L'écart est mesuré dans les deux sens, par rapport à la longueur de la frontière. Un trait deux fois trop long, ou deux fois trop court, est fortement pénalisé. Le chrono ne change pas la note.</p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

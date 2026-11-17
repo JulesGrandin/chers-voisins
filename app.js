@@ -1,10 +1,11 @@
 const EARTH_KM = 6371;
-const MIN_FRAC = 0.18;
 const MIN_KM = 40;
+const MIN_COUNTRY_KM = 100;
 const GAP_KM = 45;
-const SHAPE_TAU = 0.18;
-const LENGTH_SLACK = 0.15;
-const LENGTH_TAU = 0.32;
+const SHAPE_TAU = 0.082;
+const LENGTH_SLACK = 0.2;
+const LENGTH_TAU = 0.45;
+const LENGTH_WEIGHT = 0.55;
 const SNAP_PX = 10;
 const GRAB_PX = 88;
 
@@ -68,6 +69,7 @@ let timerFrame = 0;
 let timerToken = 0;
 let roundEndsAt = 0;
 let drawing = null;
+let camera = null;
 
 function init() {
   els.loadText = document.getElementById("load-text");
@@ -101,6 +103,10 @@ function init() {
   document.getElementById("btn-start").addEventListener("click", startGame);
   document.getElementById("btn-redraw").addEventListener("click", redrawStroke);
   document.getElementById("btn-validate").addEventListener("click", () => validate(false));
+  els.validateEnd = document.getElementById("btn-validate-end");
+  els.endActions = document.getElementById("end-actions");
+  els.validateEnd.addEventListener("click", () => validate(false));
+  document.getElementById("btn-redraw-end").addEventListener("click", redrawStroke);
   els.btnNext.addEventListener("click", onNext);
   document.getElementById("btn-replay").addEventListener("click", showIntro);
   els.scoreInfo.addEventListener("click", () => {
@@ -134,8 +140,14 @@ function init() {
     button.addEventListener("click", () => setFrame(button.dataset.frame));
   });
   window.addEventListener("resize", layout);
-  window.addEventListener("pointerup", endStroke);
-  window.addEventListener("pointercancel", endStroke);
+  window.addEventListener("pointerup", (event) => {
+    endStroke(event);
+    endCamera(event);
+  });
+  window.addEventListener("pointercancel", (event) => {
+    endStroke(event);
+    endCamera(event);
+  });
 
   buildMap();
   load().catch(() => {
@@ -546,7 +558,7 @@ function buildPairs(entities, states) {
     const answer = joinLines(lines);
     if (!answer) return;
     const km = lineKm(answer);
-    if (km < MIN_KM) return;
+    if (km < (states ? MIN_KM : MIN_COUNTRY_KM)) return;
     const endGap = haversine(answer[0], answer[answer.length - 1]);
     if (endGap < 25) return;
     const smaller = Math.min(entityA.perimeter, entityB.perimeter);
@@ -557,8 +569,6 @@ function buildPairs(entities, states) {
       features: [entityA.feature, entityB.feature],
     });
     if (!center || !Number.isFinite(center[0]) || !Number.isFinite(center[1])) return;
-    const frac = screenFraction(center, entityA.feature, entityB.feature, answer);
-    if (frac < MIN_FRAC) return;
     const label = entityA.name.localeCompare(entityB.name, "fr") <= 0
       ? `${entityA.name} — ${entityB.name}`
       : `${entityB.name} — ${entityA.name}`;
@@ -575,31 +585,6 @@ function buildPairs(entities, states) {
     });
   });
   return pairs;
-}
-
-function screenFraction(center, featureA, featureB, line) {
-  const projection = view.projection;
-  projection.rotate([-center[0], -center[1]]).scale(1).translate([0, 0]);
-  const bounds = view.path.bounds({ type: "FeatureCollection", features: [featureA, featureB] });
-  const width = bounds[1][0] - bounds[0][0];
-  const height = bounds[1][1] - bounds[0][1];
-  const span = Math.max(width, height);
-  if (!Number.isFinite(span) || span < 1e-6) return 0;
-  let length = 0;
-  let missed = 0;
-  let prev = null;
-  line.forEach((coord) => {
-    const point = projection(coord);
-    if (!point) {
-      missed += 1;
-      prev = null;
-      return;
-    }
-    if (prev) length += Math.hypot(point[0] - prev[0], point[1] - prev[1]);
-    prev = point;
-  });
-  if (missed > line.length * 0.08) return 0;
-  return length / span;
 }
 
 function buildMap() {
@@ -631,8 +616,10 @@ function buildMap() {
   view.sketch = svg.append("path").attr("class", "sketch");
   view.markers = svg.append("g").attr("class", "markers");
   view.hit = svg.append("rect").attr("class", "draw-hit");
-  view.hit.on("pointerdown", startStroke);
+  view.hit.on("pointerdown", onMapPointerDown);
   view.hit.on("contextmenu", (event) => event.preventDefault());
+  view.hit.node().addEventListener("pointermove", updateMapCursor);
+  view.svg.node().addEventListener("wheel", onWheel, { passive: false });
   view.graticuleDatum = d3.geoGraticule();
 }
 
@@ -718,7 +705,7 @@ function setFrame(frame) {
 }
 
 function fitRound(round) {
-  if (isCompact() && game.frame === "border") fitBorder(round);
+  if (game.frame === "border") fitBorder(round);
   else fitPair(round);
 }
 
@@ -812,6 +799,7 @@ function redraw() {
   paintMarkers();
   if ((game.phase === "result" || game.phase === "finish") && !view.morphFrame) paintTruth();
   else if (!view.morphFrame) view.truth.attr("d", null);
+  placeEndValidate();
 }
 
 function paintSketch() {
@@ -926,6 +914,7 @@ function beginRound() {
   els.target.textContent = pair.label;
   els.actions.hidden = true;
   els.result.hidden = true;
+  els.endActions.hidden = true;
   els.viewToggle.hidden = false;
   const token = bump();
   flyTo(() => fitRound(game.current), () => {
@@ -1039,6 +1028,121 @@ function nearestEndpoint(screen) {
   return { index, distance };
 }
 
+function isMouseEvent(event) {
+  return !event.pointerType || event.pointerType === "mouse";
+}
+
+function canStartStroke() {
+  return game.phase === "draw" && !view.flying && game.current && !game.current.ready;
+}
+
+function cameraScaleLimits() {
+  const side = Math.min(view.width, view.height);
+  return [side * 0.18, side * 16];
+}
+
+function clampTranslate(translate) {
+  const radius = view.projection.scale();
+  const pad = 48;
+  return [
+    Math.max(pad - radius, Math.min(view.width - pad + radius, translate[0])),
+    Math.max(pad - radius, Math.min(view.height - pad + radius, translate[1])),
+  ];
+}
+
+function onMapPointerDown(event) {
+  const desktop = !isCompact() && isMouseEvent(event) && !view.flying
+    && (game.phase === "draw" || game.phase === "result");
+  if (!desktop) {
+    startStroke(event);
+    return;
+  }
+  if (event.button != null && event.button !== 0) return;
+  const screen = pointerScreen(event);
+  if (canStartStroke() && nearestEndpoint(screen).distance <= GRAB_PX) {
+    startStroke(event);
+    return;
+  }
+  beginPan(event, screen);
+}
+
+function beginPan(event, screen) {
+  event.preventDefault();
+  const translate = view.projection.translate();
+  camera = {
+    pointerId: event.pointerId,
+    x: screen[0],
+    y: screen[1],
+    translate: [translate[0], translate[1]],
+  };
+  try { view.hit.node().setPointerCapture(event.pointerId); } catch (err) { /* synthetic or already released */ }
+  view.hit.on("pointermove", movePan);
+  document.body.classList.add("is-panning");
+}
+
+function movePan(event) {
+  if (!camera || event.pointerId !== camera.pointerId) return;
+  const screen = pointerScreen(event);
+  view.projection.translate(clampTranslate([
+    camera.translate[0] + screen[0] - camera.x,
+    camera.translate[1] + screen[1] - camera.y,
+  ]));
+  redraw();
+}
+
+function endCamera(event) {
+  if (!camera) return;
+  if (event && event.pointerId != null && event.pointerId !== camera.pointerId) return;
+  camera = null;
+  view.hit.on("pointermove", null);
+  document.body.classList.remove("is-panning");
+}
+
+function onWheel(event) {
+  if (isCompact() || view.flying) return;
+  if (game.phase !== "draw" && game.phase !== "result") return;
+  event.preventDefault();
+  const screen = pointerScreen(event);
+  const projection = view.projection;
+  let delta = event.deltaY;
+  if (event.deltaMode === 1) delta *= 16;
+  else if (event.deltaMode === 2) delta *= view.height;
+  const [minScale, maxScale] = cameraScaleLimits();
+  const next = Math.max(minScale, Math.min(maxScale, projection.scale() * Math.exp(-delta * 0.0016)));
+  const geo = projection.invert(screen);
+  projection.scale(next);
+  if (geo && Number.isFinite(geo[0]) && Number.isFinite(geo[1])) {
+    const moved = projection(geo);
+    if (moved) {
+      const origin = projection.translate();
+      projection.translate(clampTranslate([
+        origin[0] + screen[0] - moved[0],
+        origin[1] + screen[1] - moved[1],
+      ]));
+    }
+  }
+  redraw();
+}
+
+function updateMapCursor(event) {
+  if (!view.hit || isCompact()) return;
+  const node = view.hit.node();
+  if (camera) {
+    node.style.cursor = "grabbing";
+    return;
+  }
+  if (game.phase !== "draw" && game.phase !== "result") {
+    node.style.cursor = "";
+    return;
+  }
+  if (!canStartStroke()) {
+    node.style.cursor = "grab";
+    return;
+  }
+  const near = nearestEndpoint(pointerScreen(event));
+  node.style.cursor = near.distance <= GRAB_PX ? "crosshair" : "grab";
+}
+
 function startStroke(event) {
   if (game.phase !== "draw" || view.flying || !game.current || game.current.ready) return;
   const screen = pointerScreen(event);
@@ -1111,6 +1215,7 @@ function endStroke(event) {
   game.current.ready = true;
   document.body.classList.add("is-ready");
   els.actions.hidden = false;
+  placeEndValidate();
 }
 
 function pointerScreen(event) {
@@ -1130,6 +1235,7 @@ function redrawStroke() {
   game.current.ready = false;
   document.body.classList.remove("is-ready");
   els.actions.hidden = true;
+  els.endActions.hidden = true;
   paintSketch();
 }
 
@@ -1148,6 +1254,7 @@ function validate(auto) {
   document.body.classList.remove("is-playing", "is-ready");
   document.body.classList.add("is-result");
   els.actions.hidden = true;
+  els.endActions.hidden = true;
   els.viewToggle.hidden = true;
   const token = view.token;
   const finish = () => {
@@ -1171,6 +1278,79 @@ function showScore(round) {
   els.result.hidden = false;
 }
 
+function placeEndValidate() {
+  const group = els.endActions;
+  const round = game.current;
+  const sketch = round && round.sketch;
+  const show = group
+    && !isCompact()
+    && game.phase === "draw"
+    && round
+    && round.ready
+    && sketch
+    && sketch.length >= 2;
+  if (!show) {
+    if (group) group.hidden = true;
+    return;
+  }
+  const end = view.projection(sketch[sketch.length - 1]);
+  if (!end) {
+    group.hidden = true;
+    return;
+  }
+  let dx = 0;
+  let dy = -1;
+  for (let i = sketch.length - 2; i >= 0; i -= 1) {
+    const prev = view.projection(sketch[i]);
+    if (!prev) continue;
+    const stepX = end[0] - prev[0];
+    const stepY = end[1] - prev[1];
+    if (Math.hypot(stepX, stepY) < 12) continue;
+    dx = stepX;
+    dy = stepY;
+    break;
+  }
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  group.hidden = false;
+  const width = group.offsetWidth || 96;
+  const height = group.offsetHeight || 26;
+  const reach = Math.abs(nx) * width / 2 + Math.abs(ny) * height / 2;
+  const offset = reach + 18;
+  const candidates = [
+    [end[0] + nx * offset, end[1] + ny * offset],
+    [end[0] - nx * offset, end[1] - ny * offset],
+  ];
+  const room = (point) => Math.min(
+    point[0] - width / 2,
+    view.width - point[0] - width / 2,
+    point[1] - height / 2,
+    view.height - point[1] - height / 2,
+  );
+  const blocked = (point) => {
+    const box = {
+      left: point[0] - width / 2,
+      right: point[0] + width / 2,
+      top: point[1] - height / 2,
+      bottom: point[1] + height / 2,
+    };
+    return [els.viewToggle, els.chrome, els.historyWrap].some((node) => {
+      if (!node || node.hidden) return false;
+      const rect = node.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return false;
+      return box.right > rect.left && box.left < rect.right && box.bottom > rect.top && box.top < rect.bottom;
+    });
+  };
+  const spot = candidates.sort((a, b) => {
+    const block = Number(blocked(a)) - Number(blocked(b));
+    if (block) return block;
+    return room(b) - room(a);
+  })[0];
+  group.style.left = `${spot[0]}px`;
+  group.style.top = `${spot[1]}px`;
+}
+
 function formatKm(km) {
   if (!Number.isFinite(km)) return "—";
   const text = km < 10
@@ -1192,7 +1372,7 @@ function grade(round) {
   const shape = Math.exp(-(error / borderPx) / SHAPE_TAU);
   const drift = Math.abs(Math.log(userPx / borderPx));
   const length = Math.exp(-Math.max(0, drift - LENGTH_SLACK) / LENGTH_TAU);
-  const score = Math.round(Math.max(0, Math.min(100, 100 * shape * length)));
+  const score = Math.round(Math.max(0, Math.min(100, 100 * shape * length ** LENGTH_WEIGHT)));
   const km = error * EARTH_KM / view.projection.scale();
   return { score, km, lengthRatio: userPx / borderPx };
 }
@@ -1368,6 +1548,7 @@ function showFinish() {
   document.body.classList.add("is-finish");
   els.chrome.hidden = true;
   els.historyWrap.hidden = true;
+  els.endActions.hidden = true;
   const avg = average(game.history);
   els.finalScore.innerHTML = `${avg}<span>/100</span>`;
   els.recap.innerHTML = game.history.map((item) => (

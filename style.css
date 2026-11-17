@@ -164,6 +164,16 @@ body.is-finish .draw-hit {
   cursor: default;
 }
 
+@media (min-width: 641px) {
+  body.is-playing .draw-hit,
+  body.is-result .draw-hit {
+    pointer-events: all;
+    cursor: grab;
+  }
+
+  body.is-panning .draw-hit { cursor: grabbing; }
+}
+
 #load-overlay {
   position: fixed;
   inset: 0;
@@ -401,8 +411,61 @@ body.is-finish .draw-hit {
 
 #chrome[hidden] { display: none !important; }
 
-.view-toggle { display: none; }
+.view-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 2;
+  pointer-events: auto;
+}
+
 .view-toggle[hidden] { display: none !important; }
+
+.view-toggle-kicker {
+  margin: 0;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-shadow: 0 0 6px #fff, 0 0 3px #fff;
+}
+
+.view-toggle-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid rgba(28, 25, 21, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(28, 25, 21, 0.12);
+}
+
+.view-toggle button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.view-toggle button + button { border-left: 1px solid var(--line); }
+
+.view-toggle button[aria-pressed="true"] {
+  background: var(--ink);
+  color: #fff;
+}
+
+.validate-end,
+.end-actions { display: none; }
+.end-actions[hidden] { display: none !important; }
 
 #screen-game { width: min(300px, calc(100vw - 36px)); }
 
@@ -731,6 +794,59 @@ body.is-finish .draw-hit {
 }
 
 @media (min-width: 641px) {
+  .view-toggle {
+    position: fixed;
+    top: auto;
+    bottom: 22px;
+    right: 22px;
+    z-index: 12;
+  }
+
+  .end-actions:not([hidden]) {
+    position: fixed;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    transform: translate(-50%, -50%);
+    pointer-events: auto;
+  }
+
+  .end-actions .redraw-end {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid rgba(28, 25, 21, 0.16);
+    border-radius: 50%;
+    background: #fff;
+    color: var(--ink);
+    box-shadow: 0 2px 10px rgba(28, 25, 21, 0.15);
+    cursor: pointer;
+  }
+
+  .end-actions .redraw-end svg {
+    display: block;
+    width: 16px;
+    height: 16px;
+  }
+
+  .end-actions .redraw-end:hover { background: #faf7f2; }
+
+  .end-actions .validate-end {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    margin: 0;
+    padding: 0 11px;
+    font-size: 12px;
+    line-height: 1;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
   .finish-recap {
     scrollbar-width: thin;
     scrollbar-color: var(--ink) transparent;
@@ -765,55 +881,6 @@ body.is-finish .draw-hit {
   }
 
   #screen-game { width: auto; max-width: none; }
-
-  .view-toggle {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 4px;
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    z-index: 2;
-  }
-
-  .view-toggle-kicker {
-    margin: 0;
-    font-family: "Avenir Next", "Segoe UI", sans-serif;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    color: var(--muted);
-    text-shadow: 0 0 6px #fff, 0 0 3px #fff;
-  }
-
-  .view-toggle-switch {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    border: 1px solid rgba(28, 25, 21, 0.08);
-    border-radius: 999px;
-    overflow: hidden;
-    background: #fff;
-    box-shadow: 0 8px 22px rgba(28, 25, 21, 0.12);
-  }
-
-  .view-toggle button {
-    border: 0;
-    background: transparent;
-    color: var(--muted);
-    font-family: "Avenir Next", "Segoe UI", sans-serif;
-    font-size: 12px;
-    font-weight: 600;
-    padding: 7px 12px;
-    cursor: pointer;
-  }
-
-  .view-toggle button + button { border-left: 1px solid var(--line); }
-
-  .view-toggle button[aria-pressed="true"] {
-    background: var(--ink);
-    color: #fff;
-  }
 
   .round-meta,
   .target-line,
